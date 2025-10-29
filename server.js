@@ -1,7 +1,6 @@
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
-const { Parser } = require('json2csv');
 require('dotenv').config();
 
 const app = express();
@@ -14,6 +13,44 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
+
+// ============ HELPER FUNCTION: Convert JSON to CSV ============
+function jsonToCSV(data) {
+  if (!data || data.length === 0) {
+    return '';
+  }
+  
+  // Get headers from first object
+  const headers = Object.keys(data[0]);
+  
+  // Create CSV header row
+  const headerRow = headers.join(',');
+  
+  // Create data rows
+  const dataRows = data.map(row => {
+    return headers.map(header => {
+      let value = row[header];
+      
+      // Handle null/undefined
+      if (value === null || value === undefined) {
+        return '';
+      }
+      
+      // Convert to string
+      value = String(value);
+      
+      // Escape quotes and wrap in quotes if contains comma, quote, or newline
+      if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+        value = '"' + value.replace(/"/g, '""') + '"';
+      }
+      
+      return value;
+    }).join(',');
+  });
+  
+  // Combine header and data
+  return [headerRow, ...dataRows].join('\n');
+}
 
 // ============ INITIALIZE DATABASE ============
 async function initDB() {
@@ -229,7 +266,7 @@ app.get('/api/bin-events', async (req, res) => {
   }
 });
 
-// ============ DOWNLOAD RAW CSV ============
+// ============ DOWNLOAD RAW CSV (NO DEPENDENCIES!) ============
 app.get('/api/raw-events/csv', async (req, res) => {
   const opening = req.query.opening_number;
   
@@ -250,9 +287,8 @@ app.get('/api/raw-events/csv', async (req, res) => {
       return res.status(404).send('No data found');
     }
     
-    const fields = ['id', 'timestamp', 'opening_number', 'event_type', 'event_detail', 'raw_value'];
-    const json2csvParser = new Parser({ fields });
-    const csv = json2csvParser.parse(result.rows);
+    // Convert to CSV using our custom function
+    const csv = jsonToCSV(result.rows);
     
     res.header('Content-Type', 'text/csv');
     res.attachment('raw_events.csv');
@@ -265,7 +301,7 @@ app.get('/api/raw-events/csv', async (req, res) => {
   }
 });
 
-// ============ DOWNLOAD STRUCTURED CSV ============
+// ============ DOWNLOAD STRUCTURED CSV (NO DEPENDENCIES!) ============
 app.get('/api/bin-events/csv', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM bin_events ORDER BY opening_number ASC');
@@ -274,17 +310,8 @@ app.get('/api/bin-events/csv', async (req, res) => {
       return res.status(404).send('No data found');
     }
     
-    const fields = [
-      'opening_number', 'timestamp',
-      'open_start_time', 'open_complete_time', 'close_start_time', 'close_complete_time',
-      'open_duration_s', 'close_duration_s', 'total_cycle_s',
-      'start_angle_deg', 'max_angle_deg', 'end_angle_deg', 'avg_speed_deg_s',
-      'lora_packets_received', 'lora_packets_missed',
-      'avg_distance_cm', 'avg_rssi_dbm', 'capacitor_voltage_v', 'packet_details'
-    ];
-    
-    const json2csvParser = new Parser({ fields });
-    const csv = json2csvParser.parse(result.rows);
+    // Convert to CSV using our custom function
+    const csv = jsonToCSV(result.rows);
     
     res.header('Content-Type', 'text/csv');
     res.attachment('structured_events.csv');
