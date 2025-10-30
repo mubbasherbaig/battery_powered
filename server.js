@@ -192,7 +192,7 @@ app.post('/api/bin-event', async (req, res) => {
     
     const values = [
       opening_number,
-      timestamp || new Date().toISOString(),
+      timestamp || new Date(Date.now() + 5*60*60*1000).toISOString().replace('Z', '+05:00'),
       open_start_time,
       open_complete_time,
       close_start_time,
